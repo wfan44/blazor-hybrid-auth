@@ -1,0 +1,154 @@
+@page "/login"
+@using YourApp.Features.Auth.Models
+@using YourApp.Features.Auth.Services
+@inject IAuthenticationService AuthService
+@inject NavigationManager Navigation
+
+<div class="login-container">
+    <div class="card">
+        <div class="card-body">
+            <h1 class="card-title text-center mb-4">🔐 Login</h1>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    @errorMessage
+                    <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+                </div>
+            }
+
+            <form @onsubmit="HandleLogin">
+                <div class="form-group mb-3">
+                    <label for="email" class="form-label">Email Address</label>
+                    <input 
+                        type="email" 
+                        class="form-control" 
+                        id="email" 
+                        @bind="loginRequest.Email" 
+                        required 
+                        placeholder="Enter your email" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input 
+                        type="password" 
+                        class="form-control" 
+                        id="password" 
+                        @bind="loginRequest.Password" 
+                        required 
+                        placeholder="Enter your password" />
+                </div>
+
+                <div class="form-check mb-3">
+                    <input 
+                        type="checkbox" 
+                        class="form-check-input" 
+                        id="remember" 
+                        @bind="loginRequest.RememberMe" />
+                    <label class="form-check-label" for="remember">
+                        Remember me
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100" disabled="@isLoading">
+                    @if (isLoading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        <span>Logging in...</span>
+                    }
+                    else
+                    {
+                        <span>🔓 Login</span>
+                    }
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.login-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.card {
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    border-radius: 15px;
+    border: none;
+}
+
+.card-body {
+    padding: 40px;
+}
+
+.card-title {
+    font-size: 28px;
+    font-weight: bold;
+    color: #333;
+}
+
+.form-control {
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    padding: 10px 15px;
+    font-size: 14px;
+}
+
+.form-control:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    padding: 10px 20px;
+    font-weight: bold;
+    border-radius: 8px;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%);
+}
+</style>
+
+@code {
+    private LoginRequest loginRequest = new();
+    private string errorMessage;
+    private bool isLoading;
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var response = await AuthService.LoginAsync(loginRequest);
+
+            if (response.Success)
+            {
+                Navigation.NavigateTo("/dashboard");
+            }
+            else
+            {
+                errorMessage = response.Message ?? "Login failed";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

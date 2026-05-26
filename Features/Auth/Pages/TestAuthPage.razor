@@ -1,0 +1,270 @@
+@page "/test-auth"
+@using YourApp.Features.Auth.Services
+@using YourApp.Features.Auth.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize]
+@inject IAuthenticationService AuthService
+@inject IJwtTokenService JwtTokenService
+@inject NavigationManager Navigation
+
+<div class="test-auth-container">
+    <div class="card">
+        <div class="card-body">
+            <h1 class="card-title">🧪 Authentication Test Dashboard</h1>
+            
+            @if (!string.IsNullOrEmpty(message))
+            {
+                <div class="alert alert-@(isSuccess ? "success" : "danger") alert-dismissible fade show">
+                    @message
+                    <button type="button" class="btn-close" @onclick="() => message = null"></button>
+                </div>
+            }
+
+            <!-- Current User Info -->
+            <div class="section">
+                <h3>👤 Current User Information</h3>
+                @if (AuthService.CurrentUser != null)
+                {
+                    <div class="info-box">
+                        <p><strong>ID:</strong> <code>@AuthService.CurrentUser.Id</code></p>
+                        <p><strong>Email:</strong> <code>@AuthService.CurrentUser.Email</code></p>
+                        <p><strong>Full Name:</strong> <code>@AuthService.CurrentUser.FullName</code></p>
+                        <p><strong>Roles:</strong> 
+                            @if (AuthService.CurrentUser.Roles?.Any() == true)
+                            {
+                                <span>@string.Join(", ", AuthService.CurrentUser.Roles)</span>
+                            }
+                            else
+                            {
+                                <span>No roles assigned</span>
+                            }
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted">Not authenticated</p>
+                }
+            </div>
+
+            <!-- Token Status -->
+            <div class="section">
+                <h3>🔐 Token Status</h3>
+                <div class="info-box">
+                    <p><strong>Is Authenticated:</strong> 
+                        <span class="badge @(AuthService.IsAuthenticated ? "bg-success" : "bg-danger")">
+                            @(AuthService.IsAuthenticated ? "✓ Yes" : "✗ No")
+                        </span>
+                    </p>
+                    @if (tokenRemaining.HasValue)
+                    {
+                        <p><strong>Token Expires In:</strong> 
+                            <span class="badge bg-info">@FormatTimeSpan(tokenRemaining.Value)</span>
+                        </p>
+                    }
+                </div>
+            </div>
+
+            <!-- Token Details -->
+            <div class="section">
+                <h3>📋 Token Details</h3>
+                <button class="btn btn-outline-primary btn-sm mb-3" @onclick="ShowTokenDetails">
+                    @if (showTokenDetails)
+                    {
+                        <span>▼ Hide Token Details</span>
+                    }
+                    else
+                    {
+                        <span>▶ Show Token Details</span>
+                    }
+                </button>
+                @if (showTokenDetails && tokenPayload != null)
+                {
+                    <div class="info-box" style="background: #f5f5f5; font-family: monospace; font-size: 12px; overflow-x: auto;">
+                        <p><strong>User ID:</strong> @tokenPayload.UserId</p>
+                        <p><strong>Email:</strong> @tokenPayload.Email</p>
+                        <p><strong>Roles:</strong> @(string.Join(", ", tokenPayload.Roles))</p>
+                        <p><strong>Expires At:</strong> @tokenPayload.ExpiresAt:O</p>
+                        <p><strong>Is Expired:</strong> <span class="badge @(tokenPayload.IsExpired ? "bg-danger" : "bg-success")">@(tokenPayload.IsExpired ? "Yes" : "No")</span></p>
+                    </div>
+                }
+            </div>
+
+            <!-- Refresh Token Actions -->
+            <div class="section">
+                <h3>🔄 Refresh Token</h3>
+                <button class="btn btn-warning" @onclick="ManualRefreshToken" disabled="@isRefreshing">
+                    @if (isRefreshing)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        <span>Refreshing...</span>
+                    }
+                    else
+                    {
+                        <span>🔄 Refresh Token Now</span>
+                    }
+                </button>
+            </div>
+
+            <!-- Logout Action -->
+            <div class="section">
+                <h3>🚪 Logout</h3>
+                <button class="btn btn-danger" @onclick="Logout">
+                    🚪 Logout
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.test-auth-container {
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.card {
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    border-radius: 10px;
+}
+
+.card-body {
+    padding: 30px;
+}
+
+.card-title {
+    margin-bottom: 30px;
+    font-size: 28px;
+    color: #333;
+}
+
+.section {
+    margin-bottom: 25px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+}
+
+.section h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.info-box {
+    background: white;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    margin: 10px 0;
+}
+
+.info-box p {
+    margin: 10px 0;
+}
+
+.info-box code {
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.badge {
+    padding: 5px 10px;
+    font-weight: bold;
+}
+
+.btn {
+    margin-right: 10px;
+    margin-bottom: 10px;
+}
+
+.alert {
+    margin-bottom: 20px;
+}
+</style>
+
+@code {
+    private TokenPayload tokenPayload;
+    private TimeSpan? tokenRemaining;
+    private bool showTokenDetails = false;
+    private string message = "";
+    private bool isSuccess = false;
+    private bool isRefreshing = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshTokenInfo();
+    }
+
+    private async Task RefreshTokenInfo()
+    {
+        // In real scenario, you'd get the token from somewhere
+        // For now, this just updates the display
+        tokenRemaining = JwtTokenService.GetTokenTimeRemaining(""); // Would need actual token
+    }
+
+    private void ShowTokenDetails()
+    {
+        showTokenDetails = !showTokenDetails;
+        if (showTokenDetails && AuthService.CurrentUser != null)
+        {
+            // Create a sample token payload display
+            tokenPayload = new TokenPayload
+            {
+                UserId = AuthService.CurrentUser.Id,
+                Email = AuthService.CurrentUser.Email,
+                Roles = AuthService.CurrentUser.Roles,
+                ExpiresAt = DateTime.UtcNow.AddHours(1)
+            };
+        }
+    }
+
+    private async Task ManualRefreshToken()
+    {
+        isRefreshing = true;
+        try
+        {
+            var response = await AuthService.RefreshTokenAsync();
+            if (response.Success)
+            {
+                message = "✓ Token refreshed successfully";
+                isSuccess = true;
+                await RefreshTokenInfo();
+            }
+            else
+            {
+                message = $"✗ Refresh failed: {response.Message}";
+                isSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"✗ Error: {ex.Message}";
+            isSuccess = false;
+        }
+        finally
+        {
+            isRefreshing = false;
+        }
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/login", true);
+    }
+
+    private string FormatTimeSpan(TimeSpan ts)
+    {
+        if (ts.TotalHours > 1)
+            return $"{ts.Hours}h {ts.Minutes}m";
+        else if (ts.TotalMinutes > 0)
+            return $"{ts.Minutes}m {ts.Seconds}s";
+        else
+            return $"{ts.Seconds}s";
+    }
+}
