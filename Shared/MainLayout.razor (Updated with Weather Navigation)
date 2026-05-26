@@ -1,0 +1,55 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@inherits LayoutComponentBase
+
+<AuthorizeView>
+    <Authorized>
+        <div class="main-layout">
+            <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+                <div class="container-fluid">
+                    <a class="navbar-brand" href="/">YourApp</a>
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="collapse navbar-collapse" id="navbarNav">
+                        <ul class="navbar-nav ms-auto">
+                            <li class="nav-item">
+                                <a class="nav-link" href="/dashboard">Dashboard</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="/weather">🌤️ Weather</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="/weather-settings">⚙️ Settings</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="/sync-status">🔄 Sync</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="/logout">Logout</a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </nav>
+            <main class="content container-fluid">
+                @Body
+            </main>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="login-layout">
+            @Body
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+.navbar {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.content {
+    padding: 20px;
+    min-height: calc(100vh - 60px);
+}
+</style>

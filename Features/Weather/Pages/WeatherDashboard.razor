@@ -1,0 +1,579 @@
+@page "/weather"
+@page "/weather/{CityName}"
+@using YourApp.Features.Weather.Models
+@using YourApp.Features.Weather.Interfaces
+@using Microsoft.AspNetCore.Components
+@inject IWeatherService WeatherService
+@inject ILocationService LocationService
+@inject ISavedLocationService SavedLocationService
+@inject IWeatherPreferenceService PreferenceService
+@inject NavigationManager Navigation
+
+<div class="weather-dashboard">
+    <div class="weather-header">
+        <h1>Weather Dashboard</h1>
+        <button class="btn btn-primary btn-sm" @onclick="RefreshWeather">
+            @if (isLoading)
+            {
+                <span class="spinner-border spinner-border-sm me-2"></span>
+                <span>Refreshing...</span>
+            }
+            else
+            {
+                <span>🔄 Refresh</span>
+            }
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <strong>Error:</strong> @errorMessage
+            <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+        </div>
+    }
+
+    <div class="weather-container">
+        <!-- Search Bar -->
+        <div class="search-section">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Search city..." 
+                       @bind="searchCity" @onkeypress="@((KeyboardEventArgs e) => { if(e.Key == "Enter") SearchCity(); })" />
+                <button class="btn btn-outline-primary" @onclick="SearchCity" disabled="@isLoading">Search</button>
+            </div>
+        </div>
+
+        <!-- Saved Locations Quick Access -->
+        @if (savedLocations.Any())
+        {
+            <div class="quick-locations">
+                <h5>Saved Locations</h5>
+                <div class="location-buttons">
+                    @foreach (var location in savedLocations)
+                    {
+                        <button class="btn btn-outline-info btn-sm" @onclick="() => LoadWeatherForLocation(location)">
+                            @location.CityName, @location.Country
+                            @if (location.IsDefault)
+                            {
+                                <span class="badge bg-warning ms-2">Default</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Current Weather Card -->
+        @if (currentWeather != null)
+        {
+            <div class="current-weather-card">
+                <div class="weather-main">
+                    <div class="weather-left">
+                        <h2>@currentWeather.CityName, @currentWeather.System?.Country</h2>
+                        <p class="coordinates">@currentWeather.Coordinates?.Latitude.ToString("F2"), @currentWeather.Coordinates?.Longitude.ToString("F2")</p>
+                        
+                        @if (currentWeather.Weather != null && currentWeather.Weather.Any())
+                        {
+                            var weather = currentWeather.Weather.First();
+                            <div class="weather-info">
+                                <img src="@WeatherService.GetWeatherIconUrl(weather.Icon)" alt="@weather.Description" class="weather-icon" />
+                                <div class="weather-description">
+                                    <h3>@weather.Main</h3>
+                                    <p>@weather.Description</p>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    
+                    <div class="weather-right">
+                        <div class="temperature-display">
+                            <span class="temperature">@FormatTemperature(currentWeather.Main?.Temperature)°</span>
+                            <span class="unit">@preferences?.TemperatureUnit</span>
+                        </div>
+                        <p class="feels-like">Feels like: @FormatTemperature(currentWeather.Main?.FeelsLike)°</p>
+                    </div>
+                </div>
+
+                <!-- Weather Details Grid -->
+                <div class="weather-details-grid">
+                    <div class="detail-item">
+                        <span class="detail-label">Min Temp</span>
+                        <span class="detail-value">@FormatTemperature(currentWeather.Main?.TempMin)°</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Max Temp</span>
+                        <span class="detail-value">@FormatTemperature(currentWeather.Main?.TempMax)°</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Humidity</span>
+                        <span class="detail-value">@currentWeather.Main?.Humidity%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Pressure</span>
+                        <span class="detail-value">@currentWeather.Main?.Pressure hPa</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Wind Speed</span>
+                        <span class="detail-value">@FormatWindSpeed(currentWeather.Wind?.Speed)</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Wind Direction</span>
+                        <span class="detail-value">@GetWindDirection(currentWeather.Wind?.Degree)</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Visibility</span>
+                        <span class="detail-value">@(currentWeather.Visibility / 1000.0).ToString("F1") km</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Cloudiness</span>
+                        <span class="detail-value">@currentWeather.Clouds?.CloudPercentage%</span>
+                    </div>
+                </div>
+
+                <!-- Sunrise/Sunset -->
+                @if (currentWeather.System != null)
+                {
+                    <div class="sunrise-sunset">
+                        <div class="time-item">
+                            <span class="time-label">🌅 Sunrise</span>
+                            <span class="time-value">@FormatUnixTime(currentWeather.System.Sunrise)</span>
+                        </div>
+                        <div class="time-item">
+                            <span class="time-label">🌇 Sunset</span>
+                            <span class="time-value">@FormatUnixTime(currentWeather.System.Sunset)</span>
+                        </div>
+                    </div>
+                }
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button class="btn btn-success" @onclick="SaveCurrentLocation">💾 Save Location</button>
+                    <button class="btn btn-info" @onclick="() => Navigation.NavigateTo($\"/weather-forecast/{currentWeather.CityName}\")">📊 View Forecast</button>
+                </div>
+            </div>
+        }
+        else if (!isLoading)
+        {
+            <div class="alert alert-info">
+                Search for a city or use your current location to view weather.
+            </div>
+        }
+
+        @if (isLoading)
+        {
+            <div class="loading-spinner">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Loading weather data...</p>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+.weather-dashboard {
+    padding: 20px;
+}
+
+.weather-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.search-section {
+    margin-bottom: 20px;
+}
+
+.quick-locations {
+    margin-bottom: 20px;
+}
+
+.location-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.current-weather-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 15px;
+    padding: 30px;
+    color: white;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    margin-bottom: 20px;
+}
+
+.weather-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 30px;
+}
+
+.weather-left {
+    flex: 1;
+}
+
+.weather-left h2 {
+    margin: 0 0 5px 0;
+    font-size: 28px;
+}
+
+.coordinates {
+    font-size: 12px;
+    opacity: 0.8;
+    margin-bottom: 10px;
+}
+
+.weather-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.weather-icon {
+    width: 80px;
+    height: 80px;
+}
+
+.weather-description h3 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.weather-description p {
+    margin: 5px 0 0 0;
+    opacity: 0.9;
+}
+
+.weather-right {
+    text-align: right;
+}
+
+.temperature-display {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+.temperature {
+    font-size: 64px;
+    font-weight: bold;
+}
+
+.unit {
+    font-size: 24px;
+    opacity: 0.9;
+}
+
+.feels-like {
+    margin: 0;
+    opacity: 0.9;
+}
+
+.weather-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+    background: rgba(255,255,255,0.1);
+    padding: 20px;
+    border-radius: 10px;
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.detail-label {
+    font-size: 12px;
+    opacity: 0.8;
+    margin-bottom: 5px;
+}
+
+.detail-value {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.sunrise-sunset {
+    display: flex;
+    justify-content: space-around;
+    background: rgba(255,255,255,0.1);
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+.time-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.time-label {
+    font-size: 14px;
+    margin-bottom: 5px;
+}
+
+.time-value {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.action-buttons button {
+    padding: 10px 20px;
+}
+
+.loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 50px 20px;
+    text-align: center;
+}
+
+.loading-spinner .spinner-border {
+    margin-bottom: 20px;
+}
+
+@media (max-width: 768px) {
+    .weather-main {
+        flex-direction: column;
+    }
+
+    .weather-right {
+        text-align: left;
+        margin-top: 20px;
+    }
+
+    .temperature {
+        font-size: 48px;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+    }
+}
+</style>
+
+@code {
+    [Parameter]
+    public string CityName { get; set; }
+
+    private WeatherResponse currentWeather;
+    private List<SavedLocation> savedLocations = new();
+    private WeatherPreference preferences;
+    private string searchCity = "";
+    private string errorMessage = "";
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        preferences = await PreferenceService.GetPreferencesAsync();
+        savedLocations = await SavedLocationService.GetAllLocationsAsync();
+
+        if (!string.IsNullOrEmpty(CityName))
+        {
+            searchCity = CityName;
+            await SearchCity();
+        }
+        else
+        {
+            var defaultLocation = await SavedLocationService.GetDefaultLocationAsync();
+            if (defaultLocation != null)
+            {
+                await LoadWeatherForLocation(defaultLocation);
+            }
+            else
+            {
+                // Try to use current location
+                await UseCurrentLocation();
+            }
+        }
+    }
+
+    private async Task SearchCity()
+    {
+        if (string.IsNullOrWhiteSpace(searchCity))
+        {
+            errorMessage = "Please enter a city name";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = "";
+
+        try
+        {
+            currentWeather = await WeatherService.GetCurrentWeatherAsync(searchCity);
+            if (currentWeather == null)
+            {
+                errorMessage = "City not found";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task UseCurrentLocation()
+    {
+        isLoading = true;
+        errorMessage = "";
+
+        try
+        {
+            var hasPermission = await LocationService.RequestLocationPermissionAsync();
+            if (!hasPermission)
+            {
+                errorMessage = "Location permission denied";
+                return;
+            }
+
+            var location = await LocationService.GetCurrentLocationAsync();
+            if (location == null)
+            {
+                errorMessage = "Unable to get current location";
+                return;
+            }
+
+            currentWeather = await WeatherService.GetCurrentWeatherByCoordinatesAsync(
+                location.Latitude, location.Longitude);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadWeatherForLocation(SavedLocation location)
+    {
+        isLoading = true;
+        errorMessage = "";
+
+        try
+        {
+            currentWeather = await WeatherService.GetCurrentWeatherByCoordinatesAsync(
+                location.Latitude, location.Longitude);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshWeather()
+    {
+        if (currentWeather != null)
+        {
+            isLoading = true;
+            errorMessage = "";
+
+            try
+            {
+                currentWeather = await WeatherService.GetCurrentWeatherByCoordinatesAsync(
+                    currentWeather.Coordinates.Latitude,
+                    currentWeather.Coordinates.Longitude);
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Refresh failed: {ex.Message}";
+            }
+            finally
+            {
+                isLoading = false;
+            }
+        }
+    }
+
+    private async Task SaveCurrentLocation()
+    {
+        if (currentWeather == null) return;
+
+        var location = new SavedLocation
+        {
+            CityName = currentWeather.CityName,
+            Country = currentWeather.System?.Country,
+            Latitude = currentWeather.Coordinates.Latitude,
+            Longitude = currentWeather.Coordinates.Longitude,
+            IsDefault = false
+        };
+
+        try
+        {
+            await SavedLocationService.SaveLocationAsync(location);
+            savedLocations = await SavedLocationService.GetAllLocationsAsync();
+            errorMessage = "";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error saving location: {ex.Message}";
+        }
+    }
+
+    private string FormatTemperature(double? celsius)
+    {
+        if (!celsius.HasValue) return "N/A";
+        var converted = WeatherService.ConvertTemperature(celsius.Value, preferences?.TemperatureUnit ?? "C");
+        return converted.ToString("F1");
+    }
+
+    private string FormatWindSpeed(double? meterPerSecond)
+    {
+        if (!meterPerSecond.HasValue) return "N/A";
+        var converted = WeatherService.ConvertWindSpeed(meterPerSecond.Value, preferences?.WindSpeedUnit ?? "m/s");
+        return $"{converted.ToString("F1")} {preferences?.WindSpeedUnit}";
+    }
+
+    private string FormatUnixTime(long unixTime)
+    {
+        var dateTime = UnixTimeStampToDateTime(unixTime);
+        var format = preferences?.Use24HourFormat ?? true ? "HH:mm" : "hh:mm tt";
+        return dateTime.ToString(format);
+    }
+
+    private string GetWindDirection(int? degree)
+    {
+        if (!degree.HasValue) return "N/A";
+        var directions = new[] { "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW" };
+        var index = (int)((degree + 11.25) / 22.5) % 16;
+        return directions[index];
+    }
+
+    private DateTime UnixTimeStampToDateTime(long unixTimeStamp)
+    {
+        var dateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+        dateTime = dateTime.AddSeconds(unixTimeStamp).ToLocalTime();
+        return dateTime;
+    }
+}
