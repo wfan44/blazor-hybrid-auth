@@ -1,0 +1,112 @@
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Maui.Controls.Hosting;
+using Polly;
+using YourApp.Features.Api.Services;
+using YourApp.Features.Auth.Services;
+using YourApp.Features.Offline.Database;
+using YourApp.Features.Offline.Services;
+using YourApp.Features.Weather.Interfaces;
+using YourApp.Features.Weather.Services;
+
+namespace YourApp;
+
+public static class MauiProgram
+{
+    public static MauiApp CreateMauiApp()
+    {
+        var builder = MauiApp.CreateBuilder()
+            .UseMauiApp<App>()
+            .ConfigureFonts(fonts =>
+            {
+                fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+            });
+
+        builder
+            .Services
+            .AddMauiBlazorWebView()
+#if DEBUG
+            .AddBlazorWebViewDeveloperTools()
+#endif
+            // Database Context
+            .AddDbContext<AppDbContext>(options =>
+            {
+                var dbPath = Path.Combine(FileSystem.AppDataDirectory, "app.db");
+                options.UseSqlite($"Filename={dbPath}");
+            })
+
+            // Authentication & Token Management
+            .AddSingleton<ISecureStorageService, SecureStorageService>()
+            .AddSingleton<IJwtTokenService, JwtTokenService>()
+            .AddSingleton<ITokenBackupService, TokenBackupService>()
+            .AddSingleton<IAuthenticationService, AuthenticationService>()
+            .AddScoped<AuthenticationStateProvider, MauiAuthenticationStateProvider>()
+
+            // Offline & Caching Services
+            .AddScoped<IOfflineDataService, OfflineDataService>()
+            .AddScoped<IApiCacheService, ApiCacheService>()
+            .AddScoped<IOfflineSyncService, OfflineSyncService>()
+            .AddSingleton<IBackgroundSyncService, BackgroundSyncService>()
+
+            // Weather Services
+            .AddScoped<IWeatherService, WeatherService>()
+            .AddScoped<ILocationService, LocationService>()
+            .AddScoped<ISavedLocationService, SavedLocationService>()
+            .AddScoped<IWeatherPreferenceService, WeatherPreferenceService>()
+
+            // API Service with offline support
+            .AddHttpClient<IApiService, OfflineAwareApiService>(client =>
+            {
+                client.BaseAddress = new Uri("https://api.example.com");
+                client.DefaultRequestHeaders.Add("User-Agent", "YourApp/1.0");
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .AddTransientHttpErrorPolicy(p =>
+                p.WaitAndRetryAsync(
+                    retryCount: 3,
+                    sleepDurationProvider: _ => TimeSpan.FromSeconds(2)))
+            .AddTransientHttpErrorPolicy(p =>
+                p.CircuitBreakerAsync(
+                    handledEventsAllowedBeforeBreaking: 5,
+                    durationOfBreak: TimeSpan.FromSeconds(30)))
+
+            // Configuration
+            .AddSingleton(new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "ApiSettings:BaseUrl", "https://api.example.com" },
+                    { "ApiSettings:Timeout", "30" },
+                    { "Weather:ApiKey", "YOUR_OPENWEATHERMAP_API_KEY" } // Get from openweathermap.org
+                })
+                .Build())
+
+            // Platform Services
+            .AddSingleton<IConnectivity>(Connectivity.Current)
+            .AddSingleton<IGeolocation>(Geolocation.Default)
+            .AddSingleton<IPreferences>(Preferences.Default)
+            .AddLogging();
+
+        var mauiApp = builder.Build();
+
+        // Initialize database
+        InitializeDatabase(mauiApp);
+
+        // Start background sync service
+        StartBackgroundServices(mauiApp);
+
+        return mauiApp;
+    }
+
+    private static void InitializeDatabase(MauiApp app)
+    {
+        using var scope = app.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        dbContext.Database.Migrate();
+    }
+
+    private static void StartBackgroundServices(MauiApp app)
+    {
+        var backgroundSyncService = app.Services.GetRequiredService<IBackgroundSyncService>();
+        _ = backgroundSyncService.StartAsync();
+    }
+}

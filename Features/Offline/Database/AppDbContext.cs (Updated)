@@ -1,0 +1,77 @@
+namespace YourApp.Features.Offline.Database;
+
+using Microsoft.EntityFrameworkCore;
+using YourApp.Features.Offline.Models;
+using YourApp.Features.Weather.Models;
+
+public class AppDbContext : DbContext
+{
+    public DbSet<OfflineData> OfflineData { get; set; }
+    public DbSet<OfflineSyncQueue> SyncQueue { get; set; }
+    public DbSet<CachedApiResponse> CachedResponses { get; set; }
+    public DbSet<TokenBackup> TokenBackups { get; set; }
+    public DbSet<SavedLocation> SavedLocations { get; set; }
+    public DbSet<WeatherPreference> WeatherPreferences { get; set; }
+
+    public string DbPath { get; }
+
+    public AppDbContext()
+    {
+        var dbPath = Path.Combine(FileSystem.AppDataDirectory, "app.db");
+        DbPath = dbPath;
+    }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder options)
+    {
+        options.UseSqlite($"Filename={DbPath}");
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // Offline Data
+        modelBuilder.Entity<OfflineData>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Key).IsUnique();
+            entity.HasIndex(e => e.ExpiresAt);
+        });
+
+        // Sync Queue
+        modelBuilder.Entity<OfflineSyncQueue>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        // Cached Responses
+        modelBuilder.Entity<CachedApiResponse>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Endpoint).IsUnique();
+            entity.HasIndex(e => e.ExpiresAt);
+        });
+
+        // Token Backup
+        modelBuilder.Entity<TokenBackup>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ExpiresAt);
+        });
+
+        // Saved Locations
+        modelBuilder.Entity<SavedLocation>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.IsDefault);
+        });
+
+        // Weather Preferences
+        modelBuilder.Entity<WeatherPreference>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+        });
+    }
+}

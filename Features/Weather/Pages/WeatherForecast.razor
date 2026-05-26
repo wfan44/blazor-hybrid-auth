@@ -1,0 +1,220 @@
+@page "/weather-forecast/{CityName}"
+@using YourApp.Features.Weather.Models
+@using YourApp.Features.Weather.Interfaces
+@inject IWeatherService WeatherService
+@inject IWeatherPreferenceService PreferenceService
+@inject NavigationManager Navigation
+
+<div class="weather-forecast-container">
+    <div class="forecast-header">
+        <button class="btn btn-secondary" @onclick="() => Navigation.NavigateTo('/weather')">← Back</button>
+        <h1>5-Day Forecast for @CityName</h1>
+        <button class="btn btn-primary" @onclick="RefreshForecast">
+            @if (isLoading)
+            {
+                <span>Loading...</span>
+            }
+            else
+            {
+                <span>🔄 Refresh</span>
+            }
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    @if (forecastData != null && forecastData.ForecastItems != null)
+    {
+        <div class="forecast-grid">
+            @foreach (var item in forecastData.ForecastItems.Take(40))
+            {
+                var weather = item.Weather?.FirstOrDefault();
+                <div class="forecast-card">
+                    <div class="forecast-time">@FormatTime(item.DateTime)</div>
+                    @if (weather != null)
+                    {
+                        <img src="@WeatherService.GetWeatherIconUrl(weather.Icon)" alt="@weather.Description" class="forecast-icon" />
+                        <p class="forecast-condition">@weather.Main</p>
+                    }
+                    <p class="forecast-temp">@FormatTemperature(item.Main?.Temperature)°</p>
+                    <p class="forecast-details">
+                        <small>
+                            💧 @item.Main?.Humidity%<br />
+                            💨 @FormatWindSpeed(item.Wind?.Speed)<br />
+                            ☔ @(item.ProbabilityOfPrecipitation * 100)%
+                        </small>
+                    </p>
+                </div>
+            }
+        </div>
+    }
+    else if (isLoading)
+    {
+        <div class="loading-spinner">
+            <div class="spinner-border" role="status"></div>
+            <p>Loading forecast...</p>
+        </div>
+    }
+</div>
+
+<style>
+.weather-forecast-container {
+    padding: 20px;
+}
+
+.forecast-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 30px;
+}
+
+.forecast-header h1 {
+    margin: 0;
+    flex: 1;
+    text-align: center;
+}
+
+.forecast-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 15px;
+}
+
+.forecast-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 10px;
+    padding: 15px;
+    text-align: center;
+    color: white;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    transition: transform 0.2s;
+}
+
+.forecast-card:hover {
+    transform: translateY(-5px);
+}
+
+.forecast-time {
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.forecast-icon {
+    width: 50px;
+    height: 50px;
+    margin: 10px auto;
+}
+
+.forecast-condition {
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+.forecast-temp {
+    font-size: 20px;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+.forecast-details {
+    margin: 10px 0 0 0;
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+.loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 50px;
+}
+
+@media (max-width: 768px) {
+    .forecast-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    }
+
+    .forecast-header {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+}
+</style>
+
+@code {
+    [Parameter]
+    public string CityName { get; set; }
+
+    private ForecastResponse forecastData;
+    private WeatherPreference preferences;
+    private string errorMessage = "";
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        preferences = await PreferenceService.GetPreferencesAsync();
+        await LoadForecast();
+    }
+
+    private async Task LoadForecast()
+    {
+        isLoading = true;
+        errorMessage = "";
+
+        try
+        {
+            forecastData = await WeatherService.GetForecastAsync(CityName);
+            if (forecastData == null)
+            {
+                errorMessage = "Forecast data not found";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading forecast: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshForecast()
+    {
+        await LoadForecast();
+    }
+
+    private string FormatTemperature(double? celsius)
+    {
+        if (!celsius.HasValue) return "N/A";
+        var converted = WeatherService.ConvertTemperature(celsius.Value, preferences?.TemperatureUnit ?? "C");
+        return converted.ToString("F0");
+    }
+
+    private string FormatWindSpeed(double? meterPerSecond)
+    {
+        if (!meterPerSecond.HasValue) return "N/A";
+        var converted = WeatherService.ConvertWindSpeed(meterPerSecond.Value, preferences?.WindSpeedUnit ?? "m/s");
+        return $"{converted.ToString("F1")}";
+    }
+
+    private string FormatTime(long unixTime)
+    {
+        var dateTime = UnixTimeStampToDateTime(unixTime);
+        var format = preferences?.Use24HourFormat ?? true ? "HH:mm" : "hh:mm tt";
+        return dateTime.ToString(format);
+    }
+
+    private DateTime UnixTimeStampToDateTime(long unixTimeStamp)
+    {
+        var dateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+        dateTime = dateTime.AddSeconds(unixTimeStamp).ToLocalTime();
+        return dateTime;
+    }
+}

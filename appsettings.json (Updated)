@@ -1,0 +1,24 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "ApiSettings": {
+    "BaseUrl": "https://api.yourdomain.com",
+    "Timeout": 30
+  },
+  "Weather": {
+    "ApiKey": "YOUR_OPENWEATHERMAP_API_KEY",
+    "BaseUrl": "https://api.openweathermap.org"
+  },
+  "Jwt": {
+    "Key": "your-very-long-secret-key-min-32-chars",
+    "Issuer": "YourApp",
+    "Audience": "YourAppUsers",
+    "ExpirationMinutes": 15,
+    "RefreshTokenExpirationDays": 7
+  }
+}
